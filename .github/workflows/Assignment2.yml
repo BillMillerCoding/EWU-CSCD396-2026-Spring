@@ -1,9 +1,14 @@
-name: Deploy to Azure
+name: Assignment2
 
 on:
   push:
     branches:
       - main
+    paths:
+      - "Assignment2/DevOpsApp/**"
+      - ".github/workflows/Assignment2.yml"
+
+  workflow_dispatch:
 
 permissions:
   id-token: write
@@ -11,6 +16,8 @@ permissions:
 
 env:
   ACR_NAME: a2containerregistrybillm
+  CONTAINER_APP_NAME: devops-app
+  CONTAINER_APP_RESOURCE_GROUP: devops-rg-tf
 
 jobs:
   deploy:
@@ -27,9 +34,6 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
       - name: Set image name
         run: echo "IMAGE_NAME=${{ env.ACR_NAME }}.azurecr.io/devopsapp:${{ github.sha }}" >> $GITHUB_ENV
 
@@ -43,18 +47,8 @@ jobs:
       - name: Push container image
         run: docker push $IMAGE_NAME
 
-      - name: Terraform Init
-        run: terraform init
-        working-directory: ./Assignment2/DevOpsApp/terraform
+      - name: Deploy to Container App
+        run: az containerapp update --name ${{ env.CONTAINER_APP_NAME }} --resource-group ${{ env.CONTAINER_APP_RESOURCE_GROUP }} --image $IMAGE_NAME
 
-      - name: Terraform Validate
-        run: terraform validate
-        working-directory: ./Assignment2/DevOpsApp/terraform
-
-      - name: Terraform Plan
-        run: terraform plan -var="image_name=$IMAGE_NAME"
-        working-directory: ./Assignment2/DevOpsApp/terraform
-
-      - name: Terraform Apply
-        run: terraform apply -auto-approve -var="image_name=$IMAGE_NAME"
-        working-directory: ./Assignment2/DevOpsApp/terraform
+      - name: Show app URL
+        run: az containerapp show --name ${{ env.CONTAINER_APP_NAME }} --resource-group ${{ env.CONTAINER_APP_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv
