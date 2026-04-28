@@ -1,0 +1,13 @@
+# Example terraform.tfvars file
+# Copy this to terraform.tfvars and customize as needed
+
+resource_group_name = "rg-vmtest1"
+location            = "eastus"
+environment_name    = "env-containerapp-demo"
+container_app_name  = "ca-demo-app"
+container_image     = "mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
+
+# Other container image examples:
+# container_image = "nginx:latest"
+# container_image = "mcr.microsoft.com/dotnet/samples:aspnetapp"
+# container_image = "<your-acr>.azurecr.io/<your-image>:latest"

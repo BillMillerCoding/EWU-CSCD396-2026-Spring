@@ -1,0 +1,1 @@
+$subscriptionId = [String] "60d21190-eb1a-444a-99ae-f58bc4d8fc82"

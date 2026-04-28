@@ -1,0 +1,8 @@
+# Example backend configuration for storing Terraform state in Azure Storage
+# Copy this file to backend.conf and update with your actual values
+# Initialize with: terraform init -backend-config=backend.conf
+
+resource_group_name  = "rg-terraform-state"
+storage_account_name = "sttfstatedemo"     # Must be globally unique
+container_name       = "tfstate"
+key                  = "prod.terraform.tfstate"

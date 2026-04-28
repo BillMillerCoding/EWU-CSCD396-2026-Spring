@@ -1,0 +1,177 @@
+name: Terraform Deploy to Azure
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Terraform action to perform'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+  push:
+    branches:
+      - main
+    paths:
+      - 'Terraform/**'
+      - '.github/workflows/terraform-deploy.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'Terraform/**'
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  TF_VERSION: '1.5.0'
+  WORKING_DIR: './Terraform'
+  # Terraform Backend Configuration
+  BACKEND_RESOURCE_GROUP: ${{ vars.TF_STATE_RESOURCE_GROUP }}
+  BACKEND_STORAGE_ACCOUNT: ${{ vars.TF_STATE_STORAGE_ACCOUNT }}
+  BACKEND_CONTAINER: ${{ vars.TF_STATE_CONTAINER }}
+  BACKEND_KEY: ${{ vars.TF_STATE_KEY }}
+  # Azure Auth
+  ARM_CLIENT_ID: ${{ vars.CLIENT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ vars.TENANT_ID }}
+  ARM_USE_OIDC: true
+  # Terraform Variables
+  TF_VAR_resource_group_name: 'rg-vm-test1'
+  TF_VAR_location: 'eastus'
+  TF_VAR_function_app_name: fn-test-2026
+  TF_VAR_logic_app_name: lg-test-2026
+  TF_VAR_storage_account_name: ewutest2026
+  TF_VAR_container_app_name: ca-test-2026
+  TF_VAR_environment_name: development
+
+jobs:
+  terraform-plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'plan')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      
+      - name: Azure Login with OIDC
+        uses: azure/login@v1
+        with:
+          client-id: ${{ vars.CLIENT_ID }}
+          tenant-id: ${{ vars.TENANT_ID }}
+          subscription-id: ${{ vars.SUBSCRIPTION_ID }}
+      
+      - name: Terraform Init
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ env.BACKEND_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ env.BACKEND_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ env.BACKEND_CONTAINER }}" \
+            -backend-config="key=${{ env.BACKEND_KEY }}"
+      
+      - name: Terraform Format Check
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform fmt -check -recursive
+        continue-on-error: true
+      
+      - name: Terraform Validate
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform validate
+      
+      - name: Terraform Plan
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform plan
+
+  terraform-apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'apply')
+    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      
+      - name: Azure Login with OIDC
+        uses: azure/login@v1
+        with:
+          client-id: ${{ vars.CLIENT_ID }}
+          tenant-id: ${{ vars.TENANT_ID }}
+          subscription-id: ${{ vars.SUBSCRIPTION_ID }}
+      
+      - name: Terraform Init
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ env.BACKEND_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ env.BACKEND_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ env.BACKEND_CONTAINER }}" \
+            -backend-config="key=${{ env.BACKEND_KEY }}"
+      
+      - name: Terraform Apply
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform apply -auto-approve
+      
+      - name: Display Deployment URLs
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          echo "## Deployment Complete! 🚀" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployed Resources:" >> $GITHUB_STEP_SUMMARY
+          echo "- **Container App:** $(terraform output -raw container_app_url)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Function App:** $(terraform output -raw function_app_url)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Logic App:** $(terraform output -raw logic_app_url)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Resource Group:** $(terraform output -raw resource_group_name)" >> $GITHUB_STEP_SUMMARY
+
+  terraform-destroy:
+    name: Terraform Destroy
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'destroy'
+    environment: destroy
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      
+      - name: Azure Login with OIDC
+        uses: azure/login@v1
+        with:
+          client-id: ${{ vars.CLIENT_ID }}
+          tenant-id: ${{ vars.TENANT_ID }}
+          subscription-id: ${{ vars.SUBSCRIPTION_ID }}
+      
+      - name: Terraform Init
+        working-directory: ${{ env.WORKING_DIR }}
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ env.BACKEND_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ env.BACKEND_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ env.BACKEND_CONTAINER }}" \
+            -backend-config="key=${{ env.BACKEND_KEY }}"
+      
+      - name: Terraform Destroy
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform destroy -auto-approve

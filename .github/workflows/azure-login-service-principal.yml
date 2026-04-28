@@ -1,0 +1,168 @@
+name: Azure Login - Service Principal
+
+# Trigger options
+on:
+  workflow_dispatch:  # Manual trigger
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/azure-login-service-principal.yml'
+
+# Required for OIDC authentication
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # # Job 1: Login using OIDC (Recommended - More Secure)
+  login-with-oidc:
+    runs-on: ubuntu-latest
+    environment: production  # The login step will use this environment as part of the subject claim when reaching out to azure to looking for a matching OIDC Federated Credential. If this is ommitted, the branch name will be used in the subject claim
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Azure Login with OIDC
+        uses: azure/login@v1
+        with:
+          client-id: ${{ vars.CLIENT_ID }}
+          tenant-id: ${{ vars.TENANT_ID }}
+          subscription-id: ${{ vars.SUBSCRIPTION_ID }}
+          enable-AzPSSession: true
+
+      
+      - name: Verify Azure Connection
+        run: |
+          echo "Successfully logged into Azure!"
+          az account show
+          az group list --output table
+      
+      - name: Azure CLI Script Example
+        run: |
+          # Example: List all resource groups
+          echo "=== Resource Groups ==="
+          az group list --query "[].{Name:name, Location:location}" --output table
+          
+          # Example: List all storage accounts
+          echo "=== Storage Accounts ==="
+          az storage account show --name ewu2026test --resource-group rg-vmtest1 --query "[].{Name:name, Location:location}" --output table
+
+      
+      - name: Logout from Azure
+        if: always()
+        run: az logout
+
+  # Job 2: Login using Service Principal with Client Secret
+  # login-with-client-secret:
+  #   runs-on: ubuntu-latest
+    
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+      
+  #     - name: Azure Login with Service Principal
+  #       uses: azure/login@v1
+  #       with:
+  #         creds: |
+  #           {
+  #             "clientId": "${{ secrets.AZURE_CLIENT_ID }}",
+  #             "clientSecret": "${{ secrets.AZURE_CLIENT_SECRET }}",
+  #             "subscriptionId": "${{ secrets.AZURE_SUBSCRIPTION_ID }}",
+  #             "tenantId": "${{ secrets.AZURE_TENANT_ID }}"
+  #           }
+      
+  #     - name: Verify Azure Connection
+  #       run: |
+  #         echo "Successfully logged into Azure with service principal!"
+  #         az account show
+      
+  #     - name: Logout from Azure
+  #       if: always()
+  #       run: az logout
+
+  # Job 3: Using PowerShell to Create Key Vault
+  create-keyvault-with-powershell:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Azure Login with OIDC
+        uses: azure/login@v1
+        with:
+          client-id: ${{ vars.CLIENT_ID }}
+          tenant-id: ${{ vars.TENANT_ID }}
+          subscription-id: ${{ vars.SUBSCRIPTION_ID }}
+          enable-AzPSSession: true
+      
+      - name: Create Key Vault with Azure PowerShell
+        uses: azure/powershell@v1
+        with:
+          azPSVersion: 'latest'
+          inlineScript: |
+            # Set variables
+            $resourceGroupName = "rg-vmtest1"
+            $keyVaultName = "kv-ewu2026test"
+            $location = "eastus"
+            
+            Write-Host "Connected to Azure Subscription:"
+            Get-AzContext
+            
+            # Check if resource group exists, create if not
+            $rg = Get-AzResourceGroup -Name $resourceGroupName -ErrorAction SilentlyContinue
+            if (-not $rg) {
+              Write-Host "Creating resource group: $resourceGroupName"
+              New-AzResourceGroup -Name $resourceGroupName -Location $location
+            } else {
+              Write-Host "Resource group $resourceGroupName already exists"
+            }
+            
+            # Check if Key Vault exists
+            $kv = Get-AzKeyVault -VaultName $keyVaultName -ResourceGroupName $resourceGroupName -ErrorAction SilentlyContinue
+            if (-not $kv) {
+              Write-Host "Creating Key Vault: $keyVaultName"
+              New-AzKeyVault -VaultName $keyVaultName `
+                -ResourceGroupName $resourceGroupName `
+                -Location $location `
+                -EnabledForDeployment `
+                -EnabledForTemplateDeployment
+              Write-Host "Key Vault created successfully!"
+            } else {
+              Write-Host "Key Vault $keyVaultName already exists"
+            }
+            
+            # Display Key Vault details
+            Write-Host "`n=== Key Vault Details ==="
+            Get-AzKeyVault -VaultName $keyVaultName -ResourceGroupName $resourceGroupName | 
+              Select-Object VaultName, ResourceGroupName, Location, VaultUri | 
+              Format-List
+      
+      - name: Logout from Azure
+        if: always()
+        run: |
+          az logout
+          Disconnect-AzAccount
+
+  # # Job 4: Login using JSON Credentials (Legacy Method)
+  # login-with-json-creds:
+  #   runs-on: ubuntu-latest
+    
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+      
+  #     - name: Azure Login with JSON Credentials
+  #       uses: azure/login@v1
+  #       with:
+  #         creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+  #     - name: Verify Azure Connection
+  #       run: |
+  #         echo "Successfully logged into Azure with JSON credentials!"
+  #         az account show
+      
+  #     - name: Logout from Azure
+  #       if: always()
+  #       run: az logout
