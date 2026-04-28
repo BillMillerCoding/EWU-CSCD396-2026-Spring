@@ -52,11 +52,9 @@ jobs:
         working-directory: ./Assignment2/DevOpsApp/terraform
 
       - name: Terraform Plan
-        run: terraform plan \
-          -var="image_name=$IMAGE_NAME"
+        run: terraform plan -var="image_name=$IMAGE_NAME"
         working-directory: ./Assignment2/DevOpsApp/terraform
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve \
-          -var="image_name=$IMAGE_NAME"
+        run: terraform apply -auto-approve -var="image_name=$IMAGE_NAME"
         working-directory: ./Assignment2/DevOpsApp/terraform
