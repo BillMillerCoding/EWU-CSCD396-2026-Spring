@@ -60,6 +60,11 @@ resource "azurerm_container_app" "app" {
     }
   }
 
+  registry {
+    server   = data.azurerm_container_registry.acr.login_server
+    identity = "System"
+  }
+
   ingress {
     external_enabled = true
     target_port      = 80
