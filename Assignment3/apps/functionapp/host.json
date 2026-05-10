@@ -1,0 +1,13 @@
+{
+  "version": "2.0",
+  "logging": {
+    "applicationInsights": {
+      "samplingSettings": {
+        "isEnabled": true,
+        // Exclude Request telemetry from sampling so every function invocation
+        // is captured in Application Insights.
+        "excludedTypes": "Request"
+      }
+    }
+  }
+}

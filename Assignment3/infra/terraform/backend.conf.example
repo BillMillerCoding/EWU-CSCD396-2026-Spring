@@ -1,0 +1,10 @@
+# Copy this file to backend.conf and fill in your values for local development.
+# This file is intentionally NOT in .gitignore — it contains no secrets.
+# The actual backend.conf with real values should NOT be committed.
+#
+# Usage:
+#   terraform init -backend-config=backend.conf
+
+resource_group_name  = "devops-rg-tf"
+storage_account_name = "devopstfstatebillm"
+container_name       = "tfstate"

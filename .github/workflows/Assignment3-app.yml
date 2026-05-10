@@ -1,0 +1,191 @@
+# Assignment3 - Application Deployment
+#
+# Triggers (two independent paths):
+#
+#   1. Direct push — fires when application code under Assignment3/apps/** changes.
+#      Use this path during active development to redeploy without touching infra.
+#
+#   2. workflow_run — fires automatically after "Assignment3 - Infrastructure" completes
+#      successfully. This ensures infrastructure changes are always followed by a fresh
+#      application deployment (the Container App image reverts to the placeholder after
+#      'terraform apply'; this workflow pushes the real image immediately after).
+#
+#   3. Manual dispatch — for ad-hoc redeployments.
+#
+# IMPORTANT — workflow_run limitation:
+#   The workflow_run trigger only activates when this workflow file exists on the
+#   repository's DEFAULT BRANCH. During development on a feature branch, trigger
+#   the app deployment manually via workflow_dispatch, or merge to main first.
+#
+# Jobs:
+#   build-push-webapp   — builds Docker image, pushes to ACR, updates Container App
+#   deploy-functionapp  — publishes .NET project, zips, deploys to Azure Function App
+#   Both jobs run in parallel; they are independent of each other.
+#
+# Required GitHub Secrets (shared with other Assignment workflows):
+#   AZURE_CLIENT_ID       - OIDC client ID
+#   AZURE_TENANT_ID       - Azure AD tenant ID
+#   AZURE_SUBSCRIPTION_ID - Target subscription
+
+name: Assignment3 - Application
+
+on:
+  push:
+    branches:
+      - main
+      - Assignment3
+    paths:
+      - "Assignment3/apps/**"
+      - ".github/workflows/Assignment3-app.yml"
+  workflow_run:
+    workflows: ["Assignment3 - Infrastructure"]
+    branches:
+      - main
+      - Assignment3
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  ACR_NAME: a3registrybillm
+  CONTAINER_APP_NAME: a3-webapp
+  CONTAINER_APP_RG: a3-rg
+  FUNCTION_APP_NAME: a3-func-billm
+  FUNCTION_APP_RG: a3-rg
+
+jobs:
+  # ── Guard ──────────────────────────────────────────────────────────────────
+  # When triggered by workflow_run, only proceed if the infra workflow succeeded.
+  # For push and workflow_dispatch triggers, always proceed.
+  check-trigger:
+    name: Check trigger condition
+    runs-on: ubuntu-latest
+    outputs:
+      should-run: ${{ steps.check.outputs.should-run }}
+      commit-sha: ${{ steps.check.outputs.commit-sha }}
+    steps:
+      - name: Evaluate trigger
+        id: check
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            conclusion="${{ github.event.workflow_run.conclusion }}"
+            if [[ "$conclusion" != "success" ]]; then
+              echo "Infra workflow conclusion was '$conclusion' — skipping app deployment."
+              echo "should-run=false" >> $GITHUB_OUTPUT
+            else
+              echo "should-run=true" >> $GITHUB_OUTPUT
+            fi
+            echo "commit-sha=${{ github.event.workflow_run.head_sha }}" >> $GITHUB_OUTPUT
+          else
+            echo "should-run=true" >> $GITHUB_OUTPUT
+            echo "commit-sha=${{ github.sha }}" >> $GITHUB_OUTPUT
+          fi
+
+  # ── Web App ────────────────────────────────────────────────────────────────
+  build-push-webapp:
+    name: Build & deploy Container App
+    needs: check-trigger
+    if: needs.check-trigger.outputs.should-run == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          # When triggered via workflow_run, use the commit that triggered the
+          # infra workflow so infra and app are always at the same code version.
+          ref: ${{ needs.check-trigger.outputs.commit-sha }}
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to ACR
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Set image tag
+        run: |
+          SHA="${{ needs.check-trigger.outputs.commit-sha }}"
+          echo "IMAGE_NAME=${{ env.ACR_NAME }}.azurecr.io/a3webapp:${SHA}" >> $GITHUB_ENV
+
+      - name: Build Docker image
+        working-directory: ./Assignment3/apps/webapp
+        run: docker build -t $IMAGE_NAME .
+
+      - name: Push image to ACR
+        run: docker push $IMAGE_NAME
+
+      - name: Update Container App
+        run: |
+          az containerapp update \
+            --name            ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group  ${{ env.CONTAINER_APP_RG }} \
+            --image           $IMAGE_NAME
+
+      - name: Show app URL
+        run: |
+          FQDN=$(az containerapp show \
+            --name           ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.CONTAINER_APP_RG }} \
+            --query          properties.configuration.ingress.fqdn \
+            --output         tsv)
+          echo "## Container App deployed" >> $GITHUB_STEP_SUMMARY
+          echo "URL: https://${FQDN}" >> $GITHUB_STEP_SUMMARY
+          echo "Image: ${IMAGE_NAME}" >> $GITHUB_STEP_SUMMARY
+
+  # ── Function App ───────────────────────────────────────────────────────────
+  deploy-functionapp:
+    name: Build & deploy Function App
+    needs: check-trigger
+    if: needs.check-trigger.outputs.should-run == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.check-trigger.outputs.commit-sha }}
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Publish Function App
+        working-directory: ./Assignment3/apps/functionapp
+        run: dotnet publish -c Release -o ./publish
+
+      - name: Create deployment zip
+        working-directory: ./Assignment3/apps/functionapp/publish
+        run: zip -r ../functionapp.zip .
+
+      - name: Deploy to Azure Function App
+        run: |
+          az functionapp deployment source config-zip \
+            --name           ${{ env.FUNCTION_APP_NAME }} \
+            --resource-group ${{ env.FUNCTION_APP_RG }} \
+            --src            ./Assignment3/apps/functionapp/functionapp.zip
+
+      - name: Verify Function App is running
+        run: |
+          STATE=$(az functionapp show \
+            --name           ${{ env.FUNCTION_APP_NAME }} \
+            --resource-group ${{ env.FUNCTION_APP_RG }} \
+            --query          state \
+            --output         tsv)
+          echo "## Function App deployed" >> $GITHUB_STEP_SUMMARY
+          echo "State: ${STATE}" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,99 @@
+# Assignment3 - Infrastructure Deployment
+#
+# Triggers:
+#   - Push to main or Assignment3 branch when files under Assignment3/infra/** change.
+#   - Manual dispatch (workflow_dispatch).
+#
+# After this workflow completes successfully, the Assignment3-app.yml workflow
+# is automatically triggered via the 'workflow_run' event to redeploy application code.
+# This ensures infrastructure changes are always followed by a fresh app deployment.
+#
+# Required GitHub Secrets (shared with other Assignment workflows):
+#   AZURE_CLIENT_ID       - OIDC client ID of the federated credential
+#   AZURE_TENANT_ID       - Azure AD tenant ID
+#   AZURE_SUBSCRIPTION_ID - Target Azure subscription
+
+name: Assignment3 - Infrastructure
+
+on:
+  push:
+    branches:
+      - main
+      - Assignment3
+    paths:
+      - "Assignment3/infra/**"
+      - ".github/workflows/Assignment3-infra.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write # Required for OIDC token exchange
+  contents: read
+
+jobs:
+  terraform:
+    name: Terraform Plan & Apply
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        working-directory: ./Assignment3/infra/terraform
+        env:
+          ARM_USE_OIDC: "true"
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=devops-rg-tf" \
+            -backend-config="storage_account_name=devopstfstatebillm" \
+            -backend-config="container_name=tfstate" \
+            -reconfigure
+
+      - name: Terraform Validate
+        working-directory: ./Assignment3/infra/terraform
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: ./Assignment3/infra/terraform
+        env:
+          ARM_USE_OIDC: "true"
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: terraform plan -out=tfplan
+
+      - name: Terraform Apply
+        working-directory: ./Assignment3/infra/terraform
+        env:
+          ARM_USE_OIDC: "true"
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: terraform apply -auto-approve tfplan
+
+      - name: Output deployment summary
+        working-directory: ./Assignment3/infra/terraform
+        env:
+          ARM_USE_OIDC: "true"
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          echo "## Assignment 3 — Infrastructure Outputs" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          terraform output -no-color | while IFS= read -r line; do
+            echo "- $line" >> $GITHUB_STEP_SUMMARY
+          done
