@@ -89,13 +89,15 @@ jobs:
       # exists in state. Doing this inside Terraform would create a circular
       # dependency (Container App needs principal_id to assign the role, but
       # Azure validates registry access at creation time before the role exists).
-      - name: Configure Container App registry (managed identity)
+      - name: Configure Container App registries (managed identity)
         run: |
-          az containerapp registry set \
-            --name            a3-webapp \
-            --resource-group  a3-rg \
-            --server          a3registrybillm.azurecr.io \
-            --identity        system
+          for APP in a3-webapp a3-func-billm; do
+            az containerapp registry set \
+              --name            "${APP}" \
+              --resource-group  a3-rg \
+              --server          a3registrybillm.azurecr.io \
+              --identity        system
+          done
 
       - name: Output deployment summary
         working-directory: ./Assignment3/infra/terraform

@@ -1,0 +1,30 @@
+# Local Terraform working directory
+**/.terraform/*
+
+# State files (stored remotely in Azure blob)
+*.tfstate
+*.tfstate.*
+
+# Plan output files (ephemeral, local-only)
+*tfplan*
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Variable files with sensitive values
+*.tfvars
+*.tfvars.json
+
+# Override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Backend config with credentials (use backend.conf.example as template)
+backend.conf
+
+# CLI config
+.terraformrc
+terraform.rc
