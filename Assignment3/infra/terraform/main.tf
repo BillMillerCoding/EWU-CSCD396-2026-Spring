@@ -92,7 +92,10 @@ resource "azurerm_service_plan" "func_plan" {
   resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
   os_type             = "Linux"
-  sku_name            = "Y1" # Consumption (serverless) plan.
+  # B1 (Basic) instead of Y1 (Consumption) — Azure for Students subscriptions
+  # have zero quota for Dynamic/Consumption VMs. B1 is a dedicated plan that
+  # works within the student subscription and credit allowance.
+  sku_name            = "B1"
 }
 
 resource "azurerm_linux_function_app" "func" {
@@ -194,11 +197,13 @@ resource "azurerm_container_app" "webapp" {
     }
   }
 
-  registry {
-    # The managed identity authenticates to the ACR for image pulls.
-    server   = azurerm_container_registry.acr.login_server
-    identity = "System"
-  }
+  # Note: the registry block is intentionally absent here.
+  # Configuring managed identity registry access in the same Terraform apply
+  # that creates the Container App causes a deadlock: Azure validates ACR access
+  # at creation time, but the AcrPull role assignment can't exist until after the
+  # Container App (and its principal_id) is created.
+  # Instead, the infra workflow runs 'az containerapp registry set' after apply,
+  # by which point the AcrPull role assignment already exists in state.
 
   ingress {
     external_enabled = true
