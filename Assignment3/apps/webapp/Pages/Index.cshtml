@@ -1,0 +1,41 @@
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Send a Message";
+}
+
+<h1 class="mb-1">Service Bus Message Sender</h1>
+<p class="text-muted mb-4">
+    Messages submitted here are delivered to the Azure Service Bus <code>messages</code> queue.
+    The bound Function App receives each message and writes it as a row in Azure Table Storage.
+</p>
+
+@if (!string.IsNullOrEmpty(Model.StatusMessage))
+{
+    <div class="alert @(Model.HasError ? "alert-danger" : "alert-success") alert-dismissible fade show" role="alert">
+        @Model.StatusMessage
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+}
+
+<div class="card shadow-sm" style="max-width: 600px;">
+    <div class="card-body">
+        <form method="post">
+            @Html.AntiForgeryToken()
+
+            <div class="mb-3">
+                <label asp-for="MessageText" class="form-label fw-semibold">Message</label>
+                <textarea asp-for="MessageText"
+                          class="form-control @(Model.HasError && string.IsNullOrWhiteSpace(Model.MessageText) ? "is-invalid" : "")"
+                          rows="5"
+                          placeholder="Enter your message here…"
+                          maxlength="4096"></textarea>
+                <div class="form-text">Maximum 4,096 characters.</div>
+            </div>
+
+            <button type="submit" class="btn btn-primary">
+                Send to Service Bus
+            </button>
+        </form>
+    </div>
+</div>

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Assignment3.WebApp</RootNamespace>
+    <!-- Secrets ID used only for local development via 'dotnet user-secrets'. -->
+    <UserSecretsId>assignment3-webapp-dev</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Managed Identity and service credential support -->
+    <PackageReference Include="Azure.Identity" Version="1.13.2" />
+    <!-- Service Bus client -->
+    <PackageReference Include="Azure.Messaging.ServiceBus" Version="7.18.4" />
+  </ItemGroup>
+
+</Project>
