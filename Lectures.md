@@ -100,19 +100,14 @@ Messaging and Eventing
 
 ## Lecture 9
 ### Topics Covered
-- Static Web Apps
-- APIs
-- Content Delivery Networks (CDN)
+- Event Grid and Event Hub
 
 ## Lecture 10
 ### Topics Covered
-- Azure Static Web App Networking and DNS
+- Azure Static Web Apps
+- Content Delivery Networks (CDN)
 - Networking and DNS
-- Connecting
-- Finish off Event Grid
-- Solution architecture
-- Planning
-- Deployments
+- APIs and API Management
 
 ## Lecture 11
 ### Topics Covered
@@ -120,12 +115,12 @@ Messaging and Eventing
 
 ## Lecture 12
 ### Topics Covered
-- Finish Cosmos DB
-- API Management intro
+- Query Cosmos DB 
+- Cosmos DB Change Feed
 
 ## Lecture 13
 ### Topics Covered
-- Query Cosmos DB ***
+- AI Foundry
 
 ## Lecture 14
 ### Topics Covered
@@ -135,7 +130,6 @@ Messaging and Eventing
 ## Lecture 15
 ### Topics Covered
 - Logic App w/ Sentiment Analysis
-- Cosmos DB Change Feed
 - Static site updates w/ secure a page
 - Redis Cache
 
@@ -177,6 +171,7 @@ Agile Project Management
 ### Topics Covered
 - TBD
 
+***
 
 ## Topics to Cover
 - o GitHub Issues/Boards

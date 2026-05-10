@@ -1,10 +1,22 @@
 # Notes
 
+## 
+
+## Topics
+
+- Writing good APIs
+- PR Workflows
+- Dealing with Catch 22 in Terraform
+    - Container registry before container is ready
+    - System assigned identities
+    - Dependencies
+    - Importing state
 - How does AI work? What can you expect from it?
 - Integrate Fabric into the services
 - Integrate AI and AI Foundry into the services
 
 
+## Workflow Checks
 Integrating Security and Code Quality Checks
 Deployment Options
 

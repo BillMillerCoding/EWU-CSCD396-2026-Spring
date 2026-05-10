@@ -37,7 +37,10 @@ Complete the following Tutorials and do not clean up resources until assignment 
 - Successful Workflow Run to Deploy Infrastructure ❌✅
 
 
-4. Please add jcurry9@ewu.edu as a contributor to your subscription, otherwise grading will not be possible.
+4. Please add jcurry9@ewu.edu as a contributor to your Azure subscription, otherwise grading will not be possible.
+- Provide a link to the Azure Resource group where the resources are deployed in your PR
+- Provide a link to the GitHub Repo you used for the assignment
+
 
 
 ## Extra Credit
