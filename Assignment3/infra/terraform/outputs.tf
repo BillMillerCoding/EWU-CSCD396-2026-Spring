@@ -24,8 +24,8 @@ output "container_app_name" {
 }
 
 output "function_app_name" {
-  description = "Name of the Azure Function App. Used by the app deployment workflow."
-  value       = azurerm_linux_function_app.func.name
+  description = "Name of the Function Container App. Used by the app deployment workflow."
+  value       = azurerm_container_app.func.name
 }
 
 output "servicebus_fqdn" {

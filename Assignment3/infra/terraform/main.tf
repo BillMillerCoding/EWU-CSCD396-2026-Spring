@@ -85,73 +85,73 @@ resource "azurerm_storage_table" "messages" {
   storage_account_name = azurerm_storage_account.func_storage.name
 }
 
-# ── Function App ──────────────────────────────────────────────────────────────
+# ── Function App (Container App) ──────────────────────────────────────────────
+# Azure for Students subscriptions have zero quota for ALL App Service Plan
+# VM tiers (Consumption Y1, Basic B1, Standard S1, etc.). To work around this,
+# the function runs inside the same Container Apps environment as the web UI.
+# The Azure Functions runtime is bundled into the Docker image; the Service Bus
+# trigger is handled by the Functions host inside the container.
 
-resource "azurerm_service_plan" "func_plan" {
-  name                = "a3-func-plan"
-  resource_group_name = azurerm_resource_group.rg.name
-  location            = azurerm_resource_group.rg.location
-  os_type             = "Linux"
-  # B1 (Basic) instead of Y1 (Consumption) — Azure for Students subscriptions
-  # have zero quota for Dynamic/Consumption VMs. B1 is a dedicated plan that
-  # works within the student subscription and credit allowance.
-  sku_name            = "B1"
-}
-
-resource "azurerm_linux_function_app" "func" {
-  name                = "a3-func-${local.suffix}"
-  resource_group_name = azurerm_resource_group.rg.name
-  location            = azurerm_resource_group.rg.location
-
-  service_plan_id = azurerm_service_plan.func_plan.id
-
-  # Identity-based storage — no connection string or access key is stored.
-  # The Function App's managed identity must have Storage Blob Data Owner,
-  # Storage Queue Data Contributor, and Storage Table Data Contributor roles
-  # on this account (assigned below).
-  storage_account_name          = azurerm_storage_account.func_storage.name
-  storage_uses_managed_identity = true
+resource "azurerm_container_app" "func" {
+  name                         = "a3-func-${local.suffix}"
+  container_app_environment_id = azurerm_container_app_environment.env.id
+  resource_group_name          = azurerm_resource_group.rg.name
+  revision_mode                = "Single"
 
   identity {
     type = "SystemAssigned"
   }
 
-  site_config {
-    application_insights_connection_string = azurerm_application_insights.insights.connection_string
+  template {
+    min_replicas = 1
+    max_replicas = 3
 
-    application_stack {
-      dotnet_version              = "8.0"
-      use_dotnet_isolated_runtime = true
+    container {
+      name   = "a3func"
+      image  = var.func_container_image
+      cpu    = 0.5
+      memory = "1Gi"
+
+      env {
+        name  = "AzureWebJobsStorage__accountName"
+        value = azurerm_storage_account.func_storage.name
+      }
+
+      env {
+        name  = "AzureWebJobsStorage__credential"
+        value = "managedidentity"
+      }
+
+      env {
+        name  = "FUNCTIONS_WORKER_RUNTIME"
+        value = "dotnet-isolated"
+      }
+
+      env {
+        name  = "ServiceBusConnection__fullyQualifiedNamespace"
+        value = "${azurerm_servicebus_namespace.servicebus.name}.servicebus.windows.net"
+      }
+
+      env {
+        name  = "APPLICATIONINSIGHTS_CONNECTION_STRING"
+        value = azurerm_application_insights.insights.connection_string
+      }
+
+      env {
+        name  = "OutputStorageAccountName"
+        value = azurerm_storage_account.func_storage.name
+      }
+
+      env {
+        name  = "OutputTableName"
+        value = "messages"
+      }
     }
   }
 
-  app_settings = {
-    "FUNCTIONS_EXTENSION_VERSION" = "~4"
-    "FUNCTIONS_WORKER_RUNTIME"    = "dotnet-isolated"
-
-    # Passwordless AzureWebJobsStorage connection using managed identity.
-    # See: https://learn.microsoft.com/azure/azure-functions/functions-identity-based-connections-tutorial
-    "AzureWebJobsStorage__accountName"  = azurerm_storage_account.func_storage.name
-    "AzureWebJobsStorage__credential"   = "managedidentity"
-
-    # Passwordless Service Bus trigger connection.
-    # The 'ServiceBusConnection' name maps to 'ServiceBusConnection__fullyQualifiedNamespace'.
-    "ServiceBusConnection__fullyQualifiedNamespace" = "${azurerm_servicebus_namespace.servicebus.name}.servicebus.windows.net"
-
-    # Passed to the function so it knows where to write output entities.
-    "OutputStorageAccountName" = azurerm_storage_account.func_storage.name
-    "OutputTableName"          = "messages"
-  }
-
-  lifecycle {
-    # Azure automatically manages WEBSITE_CONTENTSHARE and WEBSITE_CONTENTAZUREFILECONNECTIONSTRING
-    # on Consumption plan apps. Ignoring them prevents Terraform from overwriting Azure's values
-    # on subsequent applies.
-    ignore_changes = [
-      app_settings["WEBSITE_CONTENTSHARE"],
-      app_settings["WEBSITE_CONTENTAZUREFILECONNECTIONSTRING"],
-    ]
-  }
+  # No ingress — the function is Service Bus-triggered, not HTTP-accessible.
+  # No registry block — ACR managed identity pull is configured post-apply
+  # via 'az containerapp registry set' in the infra workflow (same pattern as webapp).
 }
 
 # ── Container App (Web UI) ────────────────────────────────────────────────────
@@ -229,42 +229,50 @@ resource "azurerm_role_assignment" "webapp_sb_sender" {
   skip_service_principal_aad_check = true
 }
 
-# Function App → Service Bus (receive messages from the queue)
+# Function Container App → Service Bus (receive messages from the queue)
 resource "azurerm_role_assignment" "func_sb_receiver" {
   scope                            = azurerm_servicebus_namespace.servicebus.id
   role_definition_name             = "Azure Service Bus Data Receiver"
-  principal_id                     = azurerm_linux_function_app.func.identity[0].principal_id
+  principal_id                     = azurerm_container_app.func.identity[0].principal_id
   skip_service_principal_aad_check = true
 }
 
-# Function App → Storage: blobs (required by the WebJobs runtime for lease coordination)
+# Function Container App → Storage: blobs (WebJobs runtime lease coordination)
 resource "azurerm_role_assignment" "func_storage_blob_owner" {
   scope                            = azurerm_storage_account.func_storage.id
   role_definition_name             = "Storage Blob Data Owner"
-  principal_id                     = azurerm_linux_function_app.func.identity[0].principal_id
+  principal_id                     = azurerm_container_app.func.identity[0].principal_id
   skip_service_principal_aad_check = true
 }
 
-# Function App → Storage: queues (required by the WebJobs runtime for poison-message handling)
+# Function Container App → Storage: queues (WebJobs runtime poison-message handling)
 resource "azurerm_role_assignment" "func_storage_queue_contributor" {
   scope                            = azurerm_storage_account.func_storage.id
   role_definition_name             = "Storage Queue Data Contributor"
-  principal_id                     = azurerm_linux_function_app.func.identity[0].principal_id
+  principal_id                     = azurerm_container_app.func.identity[0].principal_id
   skip_service_principal_aad_check = true
 }
 
-# Function App → Storage: tables (used by the function to write received messages)
+# Function Container App → Storage: tables (function writes received messages here)
 resource "azurerm_role_assignment" "func_storage_table_contributor" {
   scope                            = azurerm_storage_account.func_storage.id
   role_definition_name             = "Storage Table Data Contributor"
-  principal_id                     = azurerm_linux_function_app.func.identity[0].principal_id
+  principal_id                     = azurerm_container_app.func.identity[0].principal_id
   skip_service_principal_aad_check = true
 }
 
-# Container App → ACR (pull the webapp Docker image)
+# Web App Container → ACR (pull the webapp Docker image)
 resource "azurerm_role_assignment" "webapp_acr_pull" {
   scope                            = azurerm_container_registry.acr.id
   role_definition_name             = "AcrPull"
   principal_id                     = azurerm_container_app.webapp.identity[0].principal_id
+  skip_service_principal_aad_check = true
+}
+
+# Function Container App → ACR (pull the function Docker image)
+resource "azurerm_role_assignment" "func_acr_pull" {
+  scope                            = azurerm_container_registry.acr.id
+  role_definition_name             = "AcrPull"
+  principal_id                     = azurerm_container_app.func.identity[0].principal_id
   skip_service_principal_aad_check = true
 }

@@ -141,8 +141,10 @@ jobs:
           echo "Image: ${IMAGE_NAME}" >> $GITHUB_STEP_SUMMARY
 
   # ── Function App ───────────────────────────────────────────────────────────
+  # Runs as a Container App (no App Service Plan) to avoid VM quota limits
+  # on Azure for Students subscriptions.
   deploy-functionapp:
-    name: Build & deploy Function App
+    name: Build & deploy Function Container App
     needs: check-trigger
     if: needs.check-trigger.outputs.should-run == 'true'
     runs-on: ubuntu-latest
@@ -160,32 +162,37 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Setup .NET 8
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: "8.0.x"
+      - name: Login to ACR
+        run: az acr login --name ${{ env.ACR_NAME }}
 
-      - name: Publish Function App
+      - name: Set image tag
+        run: |
+          SHA="${{ needs.check-trigger.outputs.commit-sha }}"
+          echo "FUNC_IMAGE_NAME=${{ env.ACR_NAME }}.azurecr.io/a3func:${SHA}" >> $GITHUB_ENV
+
+      - name: Build Docker image
         working-directory: ./Assignment3/apps/functionapp
-        run: dotnet publish -c Release -o ./publish
+        run: docker build -t $FUNC_IMAGE_NAME .
 
-      - name: Create deployment zip
-        working-directory: ./Assignment3/apps/functionapp/publish
-        run: zip -r ../functionapp.zip .
+      - name: Push image to ACR
+        run: docker push $FUNC_IMAGE_NAME
 
-      - name: Deploy to Azure Function App
+      - name: Ensure registry configured for managed identity pull
         run: |
-          az functionapp deployment source config-zip \
-            --name           ${{ env.FUNCTION_APP_NAME }} \
-            --resource-group ${{ env.FUNCTION_APP_RG }} \
-            --src            ./Assignment3/apps/functionapp/functionapp.zip
+          az containerapp registry set \
+            --name            ${{ env.FUNCTION_APP_NAME }} \
+            --resource-group  ${{ env.FUNCTION_APP_RG }} \
+            --server          ${{ env.ACR_NAME }}.azurecr.io \
+            --identity        system
 
-      - name: Verify Function App is running
+      - name: Update Function Container App
         run: |
-          STATE=$(az functionapp show \
-            --name           ${{ env.FUNCTION_APP_NAME }} \
-            --resource-group ${{ env.FUNCTION_APP_RG }} \
-            --query          state \
-            --output         tsv)
-          echo "## Function App deployed" >> $GITHUB_STEP_SUMMARY
-          echo "State: ${STATE}" >> $GITHUB_STEP_SUMMARY
+          az containerapp update \
+            --name            ${{ env.FUNCTION_APP_NAME }} \
+            --resource-group  ${{ env.FUNCTION_APP_RG }} \
+            --image           $FUNC_IMAGE_NAME
+
+      - name: Show deployment summary
+        run: |
+          echo "## Function Container App deployed" >> $GITHUB_STEP_SUMMARY
+          echo "Image: ${FUNC_IMAGE_NAME}" >> $GITHUB_STEP_SUMMARY
