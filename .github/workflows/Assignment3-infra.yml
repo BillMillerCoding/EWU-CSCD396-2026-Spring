@@ -84,6 +84,19 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         run: terraform apply -auto-approve tfplan
 
+      # Configure ACR managed identity pull access on the Container App.
+      # This runs AFTER terraform apply so the AcrPull role assignment already
+      # exists in state. Doing this inside Terraform would create a circular
+      # dependency (Container App needs principal_id to assign the role, but
+      # Azure validates registry access at creation time before the role exists).
+      - name: Configure Container App registry (managed identity)
+        run: |
+          az containerapp registry set \
+            --name            a3-webapp \
+            --resource-group  a3-rg \
+            --server          a3registrybillm.azurecr.io \
+            --identity        system
+
       - name: Output deployment summary
         working-directory: ./Assignment3/infra/terraform
         env:
